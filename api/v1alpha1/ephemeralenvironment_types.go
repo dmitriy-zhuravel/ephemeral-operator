@@ -24,44 +24,35 @@ import (
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
 // EphemeralEnvironmentSpec defines the desired state of EphemeralEnvironment
+// +kubebuilder:validation:Required
 type EphemeralEnvironmentSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
 
-	// foo is an example field of EphemeralEnvironment. Edit ephemeralenvironment_types.go to remove/update
-	// +optional
-	Foo *string `json:"foo,omitempty"`
+	// +kubebuilder:validation:Required
+	TTL *metav1.Duration `json:"ttl"`
+
+	// +kubebuilder:validation:Required
+	TargetNamespace *string `json:"targetNamespace,omitempty"`
+
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=ScaleToZero;Delete
+	Action string `json:"action,omitempty"`
 }
 
 // EphemeralEnvironmentStatus defines the observed state of EphemeralEnvironment.
 type EphemeralEnvironmentStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// For Kubernetes API conventions, see:
-	// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#typical-status-properties
-
-	// conditions represent the current state of the EphemeralEnvironment resource.
-	// Each condition has a unique type and reflects the status of a specific aspect of the resource.
-	//
-	// Standard condition types include:
-	// - "Available": the resource is fully functional
-	// - "Progressing": the resource is being created or updated
-	// - "Degraded": the resource failed to reach or maintain its desired state
-	//
-	// The status of each condition is one of True, False, or Unknown.
-	// +listType=map
-	// +listMapKey=type
-	// +optional
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
+	State      string       `json:"state,omitempty"`
+	ExpiryTime *metav1.Time `json:"expiryTime,omitempty"`
+	Reason     string       `json:"reason,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
 // EphemeralEnvironment is the Schema for the ephemeralenvironments API
+// +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`
+// +kubebuilder:printcolumn:name="ExpiryTime",type=date,JSONPath=`.status.expiryTime`
+// +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.reason`
+// +kubebuilder:printcolumn:name="TargetNS",type=string,JSONPath=`.spec.targetNamespace`
 type EphemeralEnvironment struct {
 	metav1.TypeMeta `json:",inline"`
 
