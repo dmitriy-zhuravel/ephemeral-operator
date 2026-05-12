@@ -1,0 +1,29 @@
+# This rule is not used by the project operator-project7 itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants read-only access to ephemeral.myexample.com resources.
+# This role is intended for users who need visibility into these resources
+# without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: operator-project7
+    app.kubernetes.io/managed-by: kustomize
+  name: ephemeralenvironment-viewer-role
+rules:
+- apiGroups:
+  - ephemeral.myexample.com
+  resources:
+  - ephemeralenvironments
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ephemeral.myexample.com
+  resources:
+  - ephemeralenvironments/status
+  verbs:
+  - get

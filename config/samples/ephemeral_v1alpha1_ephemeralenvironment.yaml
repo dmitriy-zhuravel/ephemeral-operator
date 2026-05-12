@@ -1,0 +1,9 @@
+apiVersion: ephemeral.myexample.com/v1alpha1
+kind: EphemeralEnvironment
+metadata:
+  labels:
+    app.kubernetes.io/name: operator-project7
+    app.kubernetes.io/managed-by: kustomize
+  name: ephemeralenvironment-sample
+spec:
+  # TODO(user): Add fields here
