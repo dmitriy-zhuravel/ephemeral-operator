@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -47,9 +48,24 @@ type EphemeralEnvironmentReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.23.3/pkg/reconcile
 func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	var obj ephemeralv1alpha1.EphemeralEnvironment
+	var log = logf.FromContext(ctx)
+
+	if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("EphemeralEnvironment not found")
+			return ctrl.Result{}, nil
+		}
+		log.Error(err, "Failed to get EphemeralEnvironment")
+		return ctrl.Result{}, err
+	}
+
+	log.Info("Reconciling EphemeralEnvironment",
+		"name", obj.Name,
+		"TTL", obj.Spec.TTL,
+		"targetNamespace", obj.Spec.TargetNamespace,
+		"action", obj.Spec.Action)
 
 	return ctrl.Result{}, nil
 }
