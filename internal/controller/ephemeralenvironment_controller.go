@@ -20,6 +20,7 @@ import (
 	"context"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -60,6 +61,15 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 		log.Error(err, "Failed to get EphemeralEnvironment")
 		return ctrl.Result{}, err
 	}
+
+	//
+	createTime := obj.CreationTimestamp.Time
+	ttl := obj.Spec.TTL.Duration
+	resultTime := metav1.NewTime(createTime.Add(ttl))
+	obj.Status.ExpiryTime = &resultTime
+	obj.Status.State = "Active"
+
+	r.Status().Update(ctx, &obj)
 
 	log.Info("Reconciling EphemeralEnvironment",
 		"name", obj.Name,
