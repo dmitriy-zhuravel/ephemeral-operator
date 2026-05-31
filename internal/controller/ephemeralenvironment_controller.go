@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -53,31 +54,48 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 	var obj ephemeralv1alpha1.EphemeralEnvironment
 	var log = logf.FromContext(ctx)
 
+	// Fetch the EphemeralEnvironment instance ; get my kube object ; handle error if not found
 	if err := r.Get(ctx, req.NamespacedName, &obj); err != nil {
-		if apierrors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) { // if the object is not found, print the log and return
 			log.Info("EphemeralEnvironment not found")
 			return ctrl.Result{}, nil
 		}
-		log.Error(err, "Failed to get EphemeralEnvironment")
+		log.Error(err, "Failed to get EphemeralEnvironment") // if there is an error other than not found, print the log and return the error
 		return ctrl.Result{}, err
 	}
 
-	//
+	// Calculate the ExpiryTime and set the time and status to the object
 	createTime := obj.CreationTimestamp.Time
 	ttl := obj.Spec.TTL.Duration
 	resultTime := metav1.NewTime(createTime.Add(ttl))
 	obj.Status.ExpiryTime = &resultTime
 	obj.Status.State = "Active"
 
+	// Update the status of the object
 	r.Status().Update(ctx, &obj)
 
+	// Print the log of the object
 	log.Info("Reconciling EphemeralEnvironment",
 		"name", obj.Name,
 		"TTL", obj.Spec.TTL,
 		"targetNamespace", obj.Spec.TargetNamespace,
 		"action", obj.Spec.Action)
 
-	return ctrl.Result{}, nil
+	// Calculate the remaining time until the ExpiryTime and requeue if necessary
+	remainingTime := time.Until(obj.Status.ExpiryTime.Time)
+
+	// If the remaining time is less than or equal to zero
+	if remainingTime <= 0 {
+		log.Info("EphemeralEnvironment has expired, performing cleanup",
+			"name", obj.Name,
+			"targetNamespace", obj.Spec.TargetNamespace)
+		return ctrl.Result{}, nil // return without requeing
+	}
+	log.Info("EphemeralEnvironment is still active, requeuing",
+		"name", obj.Name,
+		"remainingTime", remainingTime)
+	return ctrl.Result{RequeueAfter: remainingTime}, nil
+
 }
 
 // SetupWithManager sets up the controller with the Manager.
