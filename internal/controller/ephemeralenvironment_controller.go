@@ -63,7 +63,7 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 		log.Error(err, "Failed to get EphemeralEnvironment") // if there is an error other than not found, print the log and return the error
 		return ctrl.Result{}, err
 	}
-	r.Get()
+
 	// Calculate the ExpiryTime and set the time and status to the object
 	createTime := obj.CreationTimestamp.Time
 	ttl := obj.Spec.TTL.Duration
