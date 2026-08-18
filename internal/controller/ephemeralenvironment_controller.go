@@ -18,11 +18,14 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -86,16 +89,78 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// If the remaining time is less than or equal to zero
 	if remainingTime <= 0 {
+
 		log.Info("EphemeralEnvironment has expired, performing cleanup",
 			"name", obj.Name,
 			"targetNamespace", obj.Spec.TargetNamespace)
+
+		// scaling resources
+		if obj.Spec.Action == "ScaleToZero" {
+			if err := r.scaleResourcesToZero(ctx, obj); err != nil {
+				log.Error(err, "Failed to scale resources to zero")
+				return ctrl.Result{}, err
+			}
+		}
+
 		return ctrl.Result{}, nil // return without requeing
 	}
 	log.Info("EphemeralEnvironment is still active, requeuing",
 		"name", obj.Name,
 		"remainingTime", remainingTime)
 	return ctrl.Result{RequeueAfter: remainingTime}, nil
+}
 
+// ScaleToZero function to scale the target namespace to zero replicas
+func (r *EphemeralEnvironmentReconciler) scaleResourcesToZero(ctx context.Context, obj ephemeralv1alpha1.EphemeralEnvironment) error {
+	// Implement the logic to scale the target namespace to zero replicas
+	var deployments appsv1.DeploymentList
+	var statefulsets appsv1.StatefulSetList
+
+	var log = logf.FromContext(ctx)
+
+	if obj.Spec.TargetNamespace == nil {
+		log.Info("TargetNamespace is not set")
+		return fmt.Errorf("targetNamespace is required")
+	}
+
+	err := r.List(ctx, &statefulsets, client.InNamespace(*obj.Spec.TargetNamespace))
+	if err != nil { // if error on request, print the log and return
+		log.Info("Something went wrong on getting statefulsets")
+		return err
+	}
+	if len(statefulsets.Items) > 0 {
+		for i := range statefulsets.Items {
+			stfs := &statefulsets.Items[i]
+			log.Info("Found statefulset", "name", stfs.Name)
+			stfs.Spec.Replicas = ptr.To(int32(0)) // set pod amount to 0
+			if err := r.Update(ctx, stfs); err != nil {
+				log.Error(err, "Failed to update statefulset", "name", stfs.Name)
+				return err
+			}
+		}
+		log.Info("Successfully scaled target namespace to zero replicas",
+			"targetNamespace", obj.Spec.TargetNamespace)
+	}
+
+	err = r.List(ctx, &deployments, client.InNamespace(*obj.Spec.TargetNamespace))
+	if err != nil { // if error on request, print the log and return
+		log.Info("Something went wrong on getting deployments")
+		return err
+	}
+	if len(deployments.Items) > 0 {
+		for i := range deployments.Items {
+			depl := &deployments.Items[i]
+			log.Info("Found deployment", "name", depl.Name)
+			depl.Spec.Replicas = ptr.To(int32(0)) // set pod amount to 0
+			if err := r.Update(ctx, depl); err != nil {
+				log.Error(err, "Failed to update deployment", "name", depl.Name)
+				return err
+			}
+		}
+		log.Info("Successfully scaled target namespace to zero replicas",
+			"targetNamespace", obj.Spec.TargetNamespace)
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
