@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
+
 	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -101,6 +103,13 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 				return ctrl.Result{}, err
 			}
 		}
+		// deleteing namespace
+		if obj.Spec.Action == "Delete" {
+			if err := r.deleteNamespace(ctx, obj); err != nil {
+				log.Error(err, "Failed to delete namespace")
+				return ctrl.Result{}, err
+			}
+		}
 
 		return ctrl.Result{}, nil // return without requeing
 	}
@@ -125,7 +134,7 @@ func (r *EphemeralEnvironmentReconciler) scaleResourcesToZero(ctx context.Contex
 
 	err := r.List(ctx, &statefulsets, client.InNamespace(*obj.Spec.TargetNamespace))
 	if err != nil { // if error on request, print the log and return
-		log.Info("Something went wrong on getting statefulsets")
+		log.Error(err, "Something went wrong on getting statefulsets")
 		return err
 	}
 	if len(statefulsets.Items) > 0 {
@@ -144,7 +153,7 @@ func (r *EphemeralEnvironmentReconciler) scaleResourcesToZero(ctx context.Contex
 
 	err = r.List(ctx, &deployments, client.InNamespace(*obj.Spec.TargetNamespace))
 	if err != nil { // if error on request, print the log and return
-		log.Info("Something went wrong on getting deployments")
+		log.Error(err, "Something went wrong on getting deployments")
 		return err
 	}
 	if len(deployments.Items) > 0 {
@@ -159,6 +168,25 @@ func (r *EphemeralEnvironmentReconciler) scaleResourcesToZero(ctx context.Contex
 		}
 		log.Info("Successfully scaled target namespace to zero replicas",
 			"targetNamespace", obj.Spec.TargetNamespace)
+	}
+	return nil
+}
+
+func (r *EphemeralEnvironmentReconciler) deleteNamespace(ctx context.Context, obj ephemeralv1alpha1.EphemeralEnvironment) error {
+	// Implement the logic to delete namespace
+	var ns corev1.Namespace
+	var log = logf.FromContext(ctx)
+
+	if obj.Spec.TargetNamespace == nil {
+		log.Info("TargetNamespace is not set")
+		return fmt.Errorf("targetNamespace is required")
+	}
+
+	ns.Name = *obj.Spec.TargetNamespace
+	err := r.Delete(ctx, &ns)
+	if err != nil && !apierrors.IsNotFound(err) {
+		log.Error(err, "Something went wrong on deleteing namespace")
+		return err
 	}
 	return nil
 }
