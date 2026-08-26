@@ -1,135 +1,108 @@
-# operator-project7
-// TODO(user): Add simple overview of use/purpose
+# EphemeralEnvironment Operator
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+Kubernetes operator that manages the lifetime of temporary (ephemeral) environments.
 
-## Getting Started
+> **Status:** Work in progress / early development  
+> This project is under active development and is not production-ready yet.
+
+## What it does
+
+The operator watches custom resources of kind `EphemeralEnvironment` and automatically cleans up target namespaces when their TTL expires.
+
+Supported actions:
+
+- **ScaleToZero** — scales Deployments and StatefulSets in the target namespace to 0 replicas
+- **Delete** — deletes the entire target namespace
+
+Main features currently implemented:
+
+- CRD `EphemeralEnvironment` with `TTL`, `TargetNamespace` and `Action` fields
+- Status subresource (`ExpiryTime`, `State`)
+- Reconciliation loop with `RequeueAfter` based on remaining TTL
+- Helper functions for scaling and namespace deletion
+
+Planned / in progress:
+
+- Finalizers for safe cleanup on early deletion
+- Better status updates and error handling
+- Kubernetes Events
+- Helm chart and improved samples
+
+## Motivation
+
+This is a learning / portfolio project focused on understanding the Kubernetes operator pattern:
+
+- Reconciliation loop
+- Resource lifecycle and finalizers
+- RBAC
+- Working with core Kubernetes resources (Deployments, StatefulSets, Namespaces)
+
+## Quick start (development)
 
 ### Prerequisites
-- go version v1.24.6+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
+- Go 1.22+
+- Docker
+- `kubectl` configured to access a cluster (kind / minikube / real cluster)
+- Access to a Kubernetes cluster
 
-```sh
-make docker-build docker-push IMG=<some-registry>/operator-project7:tag
-```
-
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
-
-**Install the CRDs into the cluster:**
+### Install CRDs
 
 ```sh
 make install
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+### Run the operator locally
 
 ```sh
-make deploy IMG=<some-registry>/operator-project7:tag
+make run
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+The operator will use your current kubeconfig and watch the cluster.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+### Create a sample resource
 
 ```sh
-kubectl apply -k config/samples/
+kubectl apply -f config/samples/
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+Example fields:
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
-
-```sh
-kubectl delete -k config/samples/
+```yaml
+spec:
+  ttl: 10m
+  targetNamespace: test-namespace
+  action: ScaleToZero   # or Delete
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
+### Useful commands
 
 ```sh
+# Watch the custom resource
+kubectl get ephemeralenvironments -A
+
+# Check status
+kubectl get ephemeralenvironment <name> -o yaml
+
+# Clean up
 make uninstall
-```
-
-**UnDeploy the controller from the cluster:**
-
-```sh
 make undeploy
 ```
 
-## Project Distribution
+## Project structure (high level)
 
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/operator-project7:tag
+```
+api/          - CRD types and generated code
+controllers/  - Reconcile logic
+config/       - CRD manifests, RBAC, samples, kustomize
 ```
 
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
+## Notes
 
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/operator-project7/<tag or branch>/dist/install.yaml
-```
-
-### By providing a Helm Chart
-
-1. Build the chart using the optional helm plugin
-
-```sh
-kubebuilder edit --plugins=helm/v2-alpha
-```
-
-2. See that a chart was generated under 'dist/chart', and users
-can obtain this solution from there.
-
-**NOTE:** If you change the project, you need to update the Helm Chart
-using the same command above to sync the latest changes. Furthermore,
-if you create webhooks, you need to use the above command with
-the '--force' flag and manually ensure that any custom configuration
-previously added to 'dist/chart/values.yaml' or 'dist/chart/manager/manager.yaml'
-is manually re-applied afterwards.
-
-## Contributing
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
+- This project is intentionally kept relatively simple to focus on core operator concepts.
+- Some parts (finalizers, full status management, events) are still being refined.
+- Feedback and suggestions are welcome once the basic flow is more stable.
 
 ## License
 
-Copyright 2026.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-
+Apache License 2.0
