@@ -70,14 +70,27 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	// Calculate the ExpiryTime and set the time and status to the object
-	createTime := obj.CreationTimestamp.Time
-	ttl := obj.Spec.TTL.Duration
-	resultTime := metav1.NewTime(createTime.Add(ttl))
-	obj.Status.ExpiryTime = &resultTime
-	obj.Status.State = "Active"
-
-	// Update the status of the object
-	r.Status().Update(ctx, &obj)
+	if obj.Status.ExpiryTime == nil {
+		createTime := obj.CreationTimestamp.Time
+		ttl := obj.Spec.TTL.Duration
+		resultTime := metav1.NewTime(createTime.Add(ttl))
+		obj.Status.ExpiryTime = &resultTime
+		obj.Status.State = "Active"
+		// Update the status of the object
+		if err := r.Status().Update(ctx, &obj); err != nil {
+			switch {
+			case apierrors.IsConflict(err):
+				log.Info("EphemeralEnvironment has been changed")
+				return ctrl.Result{Requeue: true}, nil
+			case apierrors.IsNotFound(err):
+				log.Info("EphemeralEnvironment not found")
+				return ctrl.Result{}, nil
+			default:
+				log.Error(err, "Failed to update EphemeralEnvironment")
+				return ctrl.Result{}, err
+			}
+		}
+	}
 
 	// Print the log of the object
 	log.Info("Reconciling EphemeralEnvironment",
