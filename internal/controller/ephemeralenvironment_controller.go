@@ -30,6 +30,7 @@ import (
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	ephemeralv1alpha1 "github.com/bugimprover/ephemeral-operator/api/v1alpha1"
@@ -40,6 +41,8 @@ type EphemeralEnvironmentReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
+
+const ephemeralFinalizer = "ephemeral.myexample.com/finalizer"
 
 // +kubebuilder:rbac:groups=ephemeral.myexample.com,resources=ephemeralenvironments,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ephemeral.myexample.com,resources=ephemeralenvironments/status,verbs=get;update;patch
@@ -67,6 +70,37 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 		log.Error(err, "Failed to get EphemeralEnvironment") // if there is an error other than not found, print the log and return the error
 		return ctrl.Result{}, err
+	}
+
+	// Get annotations
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+
+	const targetAnnotation = "ephemeral.myexample.com/cleanup-on-delete"
+	if !obj.DeletionTimestamp.IsZero() {
+		if annotations[targetAnnotation] == "true" {
+			if obj.Spec.Action == "ScaleToZero" {
+				if err := r.scaleResourcesToZero(ctx, obj); err != nil {
+					log.Error(err, "Failed to scale resources to zero")
+					return ctrl.Result{}, err
+				}
+			}
+
+			if obj.Spec.Action == "Delete" {
+				if err := r.deleteNamespace(ctx, obj); err != nil {
+					log.Error(err, "Failed to delete namespace")
+					return ctrl.Result{}, err
+				}
+			}
+		}
+
+		controllerutil.RemoveFinalizer(&obj, ephemeralFinalizer)
+		if err := r.Update(ctx, &obj); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
 	}
 
 	// Calculate the ExpiryTime and set the time and status to the object
@@ -102,6 +136,28 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 	// Calculate the remaining time until the ExpiryTime and requeue if necessary
 	remainingTime := time.Until(obj.Status.ExpiryTime.Time)
 
+	if _, exists := annotations[targetAnnotation]; !exists {
+		// Adding annotation
+		annotations[targetAnnotation] = "false"
+		obj.SetAnnotations(annotations)
+
+		// Save changes
+		if err := r.Update(ctx, &obj); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, nil
+	}
+
+	// Checking and adding the Finalizer
+	if !controllerutil.ContainsFinalizer(&obj, ephemeralFinalizer) {
+		controllerutil.AddFinalizer(&obj, ephemeralFinalizer)
+		if err := r.Update(ctx, &obj); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// If the remaining time is less than or equal to zero
 	if remainingTime <= 0 {
 
@@ -116,6 +172,7 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 				return ctrl.Result{}, err
 			}
 		}
+
 		// deleteing namespace
 		if obj.Spec.Action == "Delete" {
 			if err := r.deleteNamespace(ctx, obj); err != nil {
