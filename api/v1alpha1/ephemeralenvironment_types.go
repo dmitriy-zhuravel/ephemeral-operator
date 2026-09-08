@@ -45,14 +45,15 @@ type EphemeralEnvironmentStatus struct {
 	Reason     string       `json:"reason,omitempty"`
 }
 
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-
 // EphemeralEnvironment is the Schema for the ephemeralenvironments API
 // +kubebuilder:printcolumn:name="State",type=string,JSONPath=`.status.state`
 // +kubebuilder:printcolumn:name="ExpiryTime",type=date,JSONPath=`.status.expiryTime`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.reason`
 // +kubebuilder:printcolumn:name="TargetNS",type=string,JSONPath=`.spec.targetNamespace`
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
+
 type EphemeralEnvironment struct {
 	metav1.TypeMeta `json:",inline"`
 

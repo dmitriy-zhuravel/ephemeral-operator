@@ -12,7 +12,7 @@ spec:
     listKind: EphemeralEnvironmentList
     plural: ephemeralenvironments
     singular: ephemeralenvironment
-  scope: Namespaced
+  scope: Cluster
   versions:
   - additionalPrinterColumns:
     - jsonPath: .status.state
@@ -30,8 +30,6 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: EphemeralEnvironment is the Schema for the ephemeralenvironments
-          API
         properties:
           apiVersion:
             description: |-
