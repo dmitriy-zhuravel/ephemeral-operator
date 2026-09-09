@@ -109,20 +109,9 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 		ttl := obj.Spec.TTL.Duration
 		resultTime := metav1.NewTime(createTime.Add(ttl))
 		obj.Status.ExpiryTime = &resultTime
-		obj.Status.State = "Active"
 		// Update the status of the object
-		if err := r.Status().Update(ctx, &obj); err != nil {
-			switch {
-			case apierrors.IsConflict(err):
-				log.Info("EphemeralEnvironment has been changed")
-				return ctrl.Result{Requeue: true}, nil
-			case apierrors.IsNotFound(err):
-				log.Info("EphemeralEnvironment not found")
-				return ctrl.Result{}, nil
-			default:
-				log.Error(err, "Failed to update EphemeralEnvironment")
-				return ctrl.Result{}, err
-			}
+		if res, err := r.updateStatus(ctx, &obj, "Active", ""); err != nil {
+			return res, err
 		}
 	}
 
@@ -161,15 +150,25 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 	// If the remaining time is less than or equal to zero
 	if remainingTime <= 0 {
 
+		if obj.Status.State == "Expired" {
+			return ctrl.Result{}, nil
+		}
 		log.Info("EphemeralEnvironment has expired, performing cleanup",
 			"name", obj.Name,
 			"targetNamespace", obj.Spec.TargetNamespace)
+
+		if res, err := r.updateStatus(ctx, &obj, "Expiring", "TTL expired"); err != nil {
+			return res, err
+		}
 
 		// scaling resources
 		if obj.Spec.Action == "ScaleToZero" {
 			if err := r.scaleResourcesToZero(ctx, obj); err != nil {
 				log.Error(err, "Failed to scale resources to zero")
-				return ctrl.Result{}, err
+				return r.updateStatus(ctx, &obj, "ScaleToZeroFailed", err.Error())
+			}
+			if res, err := r.updateStatus(ctx, &obj, "Expired", "ScaleToZero was done"); err != nil {
+				return res, err
 			}
 		}
 
@@ -177,16 +176,47 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 		if obj.Spec.Action == "Delete" {
 			if err := r.deleteNamespace(ctx, obj); err != nil {
 				log.Error(err, "Failed to delete namespace")
-				return ctrl.Result{}, err
+				return r.updateStatus(ctx, &obj, "DeleteFailed", err.Error())
+			}
+			if res, err := r.updateStatus(ctx, &obj, "Expired", "Namespace was deleted"); err != nil {
+				return res, err
 			}
 		}
 
 		return ctrl.Result{}, nil // return without requeing
 	}
+
 	log.Info("EphemeralEnvironment is still active, requeuing",
 		"name", obj.Name,
 		"remainingTime", remainingTime)
 	return ctrl.Result{RequeueAfter: remainingTime}, nil
+}
+
+func (r *EphemeralEnvironmentReconciler) updateStatus(
+	ctx context.Context,
+	obj *ephemeralv1alpha1.EphemeralEnvironment,
+	status string,
+	reason string,
+) (ctrl.Result, error) {
+
+	var log = logf.FromContext(ctx)
+	obj.Status.State = status
+	obj.Status.Reason = reason
+	// Update the status of the object
+	if err := r.Status().Update(ctx, obj); err != nil {
+		switch {
+		case apierrors.IsConflict(err):
+			log.Info("EphemeralEnvironment has been changed")
+			return ctrl.Result{Requeue: true}, err
+		case apierrors.IsNotFound(err):
+			log.Info("EphemeralEnvironment not found")
+			return ctrl.Result{}, nil
+		default:
+			log.Error(err, "Failed to update EphemeralEnvironment")
+			return ctrl.Result{}, err
+		}
+	}
+	return ctrl.Result{}, nil
 }
 
 // ScaleToZero function to scale the target namespace to zero replicas
