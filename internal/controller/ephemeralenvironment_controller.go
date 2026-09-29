@@ -27,6 +27,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -36,10 +37,22 @@ import (
 	ephemeralv1alpha1 "github.com/bugimprover/ephemeral-operator/api/v1alpha1"
 )
 
+// Event const
+const (
+	ReasonInitialized     = "Initialized"
+	ReasonCleanupStarted  = "CleanupStarted"
+	ReasonCleanupComplete = "CleanupComplete"
+	ReasonCleanupFailed   = "CleanupFailed"
+	ReasonScalingStarted  = "ScalingStarted"
+	ReasonScalingComplete = "ScalingComplete"
+	ReasonScalingFailed   = "ScalingFailed"
+)
+
 // EphemeralEnvironmentReconciler reconciles a EphemeralEnvironment object
 type EphemeralEnvironmentReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 const ephemeralFinalizer = "ephemeral.myexample.com/finalizer"
@@ -141,6 +154,7 @@ func (r *EphemeralEnvironmentReconciler) Reconcile(ctx context.Context, req ctrl
 	// Checking and adding the Finalizer
 	if !controllerutil.ContainsFinalizer(&obj, ephemeralFinalizer) {
 		controllerutil.AddFinalizer(&obj, ephemeralFinalizer)
+		r.Recorder.Event(&obj, corev1.EventTypeNormal, ReasonInitialized, "Ephemeral object initiated")
 		if err := r.Update(ctx, &obj); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -232,11 +246,15 @@ func (r *EphemeralEnvironmentReconciler) scaleResourcesToZero(ctx context.Contex
 		return fmt.Errorf("targetNamespace is required")
 	}
 
+	r.Recorder.Eventf(&obj, corev1.EventTypeNormal, ReasonScalingStarted, "Starting scaling namespace: %s", *obj.Spec.TargetNamespace)
+
 	err := r.List(ctx, &statefulsets, client.InNamespace(*obj.Spec.TargetNamespace))
 	if err != nil { // if error on request, print the log and return
 		log.Error(err, "Something went wrong on getting statefulsets")
+		r.Recorder.Eventf(&obj, corev1.EventTypeWarning, ReasonScalingFailed, "Scaling namespace %s is failed", *obj.Spec.TargetNamespace)
 		return err
 	}
+
 	if len(statefulsets.Items) > 0 {
 		for i := range statefulsets.Items {
 			stfs := &statefulsets.Items[i]
@@ -244,6 +262,7 @@ func (r *EphemeralEnvironmentReconciler) scaleResourcesToZero(ctx context.Contex
 			stfs.Spec.Replicas = ptr.To(int32(0)) // set pod amount to 0
 			if err := r.Update(ctx, stfs); err != nil {
 				log.Error(err, "Failed to update statefulset", "name", stfs.Name)
+				r.Recorder.Eventf(&obj, corev1.EventTypeWarning, ReasonScalingFailed, "Scaling namespace %s is failed", *obj.Spec.TargetNamespace)
 				return err
 			}
 		}
@@ -254,6 +273,7 @@ func (r *EphemeralEnvironmentReconciler) scaleResourcesToZero(ctx context.Contex
 	err = r.List(ctx, &deployments, client.InNamespace(*obj.Spec.TargetNamespace))
 	if err != nil { // if error on request, print the log and return
 		log.Error(err, "Something went wrong on getting deployments")
+		r.Recorder.Eventf(&obj, corev1.EventTypeWarning, ReasonScalingFailed, "Scaling namespace %s is failed", *obj.Spec.TargetNamespace)
 		return err
 	}
 	if len(deployments.Items) > 0 {
@@ -263,12 +283,15 @@ func (r *EphemeralEnvironmentReconciler) scaleResourcesToZero(ctx context.Contex
 			depl.Spec.Replicas = ptr.To(int32(0)) // set pod amount to 0
 			if err := r.Update(ctx, depl); err != nil {
 				log.Error(err, "Failed to update deployment", "name", depl.Name)
+				r.Recorder.Eventf(&obj, corev1.EventTypeWarning, ReasonScalingFailed, "Scaling namespace %s is failed", *obj.Spec.TargetNamespace)
 				return err
 			}
 		}
 		log.Info("Successfully scaled target namespace to zero replicas",
 			"targetNamespace", obj.Spec.TargetNamespace)
 	}
+	r.Recorder.Eventf(&obj, corev1.EventTypeNormal, ReasonScalingComplete, "Scaling namespace %s is complete", *obj.Spec.TargetNamespace)
+
 	return nil
 }
 
@@ -282,12 +305,16 @@ func (r *EphemeralEnvironmentReconciler) deleteNamespace(ctx context.Context, ob
 		return fmt.Errorf("targetNamespace is required")
 	}
 
+	r.Recorder.Eventf(&obj, corev1.EventTypeNormal, ReasonCleanupStarted, "Starting cleanup namespace: %s", *obj.Spec.TargetNamespace)
 	ns.Name = *obj.Spec.TargetNamespace
 	err := r.Delete(ctx, &ns)
 	if err != nil && !apierrors.IsNotFound(err) {
 		log.Error(err, "Something went wrong on deleteing namespace")
+		r.Recorder.Eventf(&obj, corev1.EventTypeWarning, ReasonCleanupFailed, "Cleanup namespace %s is failed", *obj.Spec.TargetNamespace)
 		return err
 	}
+	r.Recorder.Eventf(&obj, corev1.EventTypeNormal, ReasonCleanupComplete, "Cleanup namespace: %s is complete", *obj.Spec.TargetNamespace)
+
 	return nil
 }
 
